@@ -113,6 +113,132 @@ function VehicleGpsMarker({
   );
 }
 
+interface FleetGoogleMapCanvasProps {
+  filteredVehicles: Vehicle[];
+  theme: ThemeMode;
+  selectedId: number | null;
+  canSimulatePing?: boolean;
+  simulatingId: number | null;
+  focusTarget: { lat: number; lng: number; nonce: number } | null;
+  onSelect: (id: number) => void;
+  onClose: () => void;
+  onPing: (id: number, status?: string) => Promise<void>;
+  onZoomChange: (zoom: number) => void;
+}
+
+function FleetGoogleMapCanvas({
+  filteredVehicles,
+  theme,
+  selectedId,
+  canSimulatePing,
+  simulatingId,
+  focusTarget,
+  onSelect,
+  onClose,
+  onPing,
+  onZoomChange,
+}: FleetGoogleMapCanvasProps) {
+  const map = useMap('fleet-tracking-map');
+  const apiStatus = useApiLoadingStatus();
+  const [zoom, setZoom] = useState(DEFAULT_ZOOM);
+
+  useEffect(() => {
+    if (apiStatus === APILoadingStatus.AUTH_FAILURE) {
+      window.dispatchEvent(new CustomEvent('gmp-quota-exceeded'));
+    }
+  }, [apiStatus]);
+
+  useEffect(() => {
+    if (focusTarget && map) {
+      map.panTo({ lat: focusTarget.lat, lng: focusTarget.lng });
+      map.setZoom(14);
+      setZoom(14);
+      onZoomChange(14);
+    }
+  }, [focusTarget, map, onZoomChange]);
+
+  return (
+    <div
+      data-testid="fleet-tracking-map"
+      className="w-full h-[440px] rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-800 relative"
+    >
+      <GoogleMap
+        id="fleet-tracking-map"
+        mapId="DEMO_MAP_ID"
+        colorScheme={theme === 'dark' ? 'DARK' : 'LIGHT'}
+        defaultCenter={BATAM_CENTER}
+        defaultZoom={DEFAULT_ZOOM}
+        gestureHandling="greedy"
+        zoomControl={false}
+        mapTypeControl={false}
+        streetViewControl={false}
+        fullscreenControl={true}
+        internalUsageAttributionIds={['gmp_mcp_codeassist_v1_aistudio']}
+        onCameraChanged={(ev) => {
+          setZoom(ev.detail.zoom);
+          onZoomChange(ev.detail.zoom);
+        }}
+        className="w-full h-full"
+      >
+        {filteredVehicles.map((v) => (
+          <VehicleGpsMarker
+            key={v.id}
+            vehicle={v}
+            isSelected={selectedId === v.id}
+            canSimulatePing={canSimulatePing}
+            simulatingId={simulatingId}
+            onSelect={onSelect}
+            onClose={onClose}
+            onPing={onPing}
+          />
+        ))}
+      </GoogleMap>
+
+      <div className="absolute bottom-6 right-3 z-10 flex flex-col gap-1.5">
+        <button
+          type="button"
+          aria-label="Perbesar peta pelacakan"
+          onClick={() => {
+            const next = Math.min(18, Math.round(map?.getZoom() ?? zoom) + 1);
+            map?.setZoom(next);
+            setZoom(next);
+            onZoomChange(next);
+          }}
+          className="w-10 h-10 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg shadow-sm flex items-center justify-center text-slate-800 dark:text-slate-100"
+        >
+          <Plus className="w-4 h-4" />
+        </button>
+        <button
+          type="button"
+          aria-label="Perkecil peta pelacakan"
+          onClick={() => {
+            const next = Math.max(10, Math.round(map?.getZoom() ?? zoom) - 1);
+            map?.setZoom(next);
+            setZoom(next);
+            onZoomChange(next);
+          }}
+          className="w-10 h-10 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg shadow-sm flex items-center justify-center text-slate-800 dark:text-slate-100"
+        >
+          <Minus className="w-4 h-4" />
+        </button>
+        <button
+          type="button"
+          aria-label="Pusatkan peta pelacakan Batam"
+          onClick={() => {
+            map?.panTo(BATAM_CENTER);
+            map?.setZoom(DEFAULT_ZOOM);
+            setZoom(DEFAULT_ZOOM);
+            onZoomChange(DEFAULT_ZOOM);
+          }}
+          className="w-10 h-10 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg shadow-sm flex items-center justify-center text-blue-700 dark:text-blue-400"
+        >
+          <RotateCcw className="w-4 h-4" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function FleetTrackingMap({
   vehicles,
   theme,
@@ -122,8 +248,6 @@ export function FleetTrackingMap({
   onSimulateVehiclePing,
 }: FleetTrackingMapProps) {
   const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined;
-  const map = useMap('fleet-tracking-map');
-  const apiStatus = useApiLoadingStatus();
 
   const [statusFilter, setStatusFilter] = useState<'all' | 'en_route' | 'parked'>('all');
   const [selectedId, setSelectedId] = useState<number | null>(
@@ -131,12 +255,9 @@ export function FleetTrackingMap({
   );
   const [simulatingId, setSimulatingId] = useState<number | null>(null);
   const [zoom, setZoom] = useState(DEFAULT_ZOOM);
-
-  useEffect(() => {
-    if (apiStatus === APILoadingStatus.AUTH_FAILURE) {
-      window.dispatchEvent(new CustomEvent('gmp-quota-exceeded'));
-    }
-  }, [apiStatus]);
+  const [focusTarget, setFocusTarget] = useState<{ lat: number; lng: number; nonce: number } | null>(
+    null
+  );
 
   const filteredVehicles = useMemo(() => {
     if (statusFilter === 'all') return vehicles;
@@ -152,19 +273,12 @@ export function FleetTrackingMap({
     }
   }, [filteredVehicles, selectedId]);
 
-  const focusVehicle = useCallback(
-    (v: Vehicle) => {
-      setSelectedId(v.id);
-      const lat = Number(v.currentLat) || BATAM_CENTER.lat;
-      const lng = Number(v.currentLng) || BATAM_CENTER.lng;
-      if (map) {
-        map.panTo({ lat, lng });
-        map.setZoom(14);
-        setZoom(14);
-      }
-    },
-    [map]
-  );
+  const focusVehicle = useCallback((v: Vehicle) => {
+    setSelectedId(v.id);
+    const lat = Number(v.currentLat) || BATAM_CENTER.lat;
+    const lng = Number(v.currentLng) || BATAM_CENTER.lng;
+    setFocusTarget({ lat, lng, nonce: Date.now() });
+  }, []);
 
   const handlePing = async (vehicleId: number, requestedStatus?: string) => {
     if (!onSimulateVehiclePing) return;
@@ -334,82 +448,25 @@ export function FleetTrackingMap({
             <div className="h-[440px] rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center p-6 text-center">
               <MapPin className="w-8 h-8 text-slate-400 dark:text-slate-500 mb-2" />
               <p className="font-display text-sm font-semibold text-slate-900 dark:text-slate-100">
-                Kunci Google Maps Platform belum tersedia
+                Peta Pelacakan Memerlukan Kunci Google Maps Platform
+              </p>
+              <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 max-w-md">
+                Daftar lokasi dan kecepatan unit tetap aktif secara penuh di panel sebelah kiri.
               </p>
             </div>
           ) : (
-            <div
-              data-testid="fleet-tracking-map"
-              className="w-full h-[440px] rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-800 relative"
-            >
-              <GoogleMap
-                id="fleet-tracking-map"
-                mapId="DEMO_MAP_ID"
-                colorScheme={theme === 'dark' ? 'DARK' : 'LIGHT'}
-                defaultCenter={BATAM_CENTER}
-                defaultZoom={DEFAULT_ZOOM}
-                gestureHandling="greedy"
-                zoomControl={false}
-                mapTypeControl={false}
-                streetViewControl={false}
-                fullscreenControl={true}
-                internalUsageAttributionIds={['gmp_mcp_codeassist_v1_aistudio']}
-                onCameraChanged={(ev) => setZoom(ev.detail.zoom)}
-                className="w-full h-full"
-              >
-                {filteredVehicles.map((v) => (
-                  <VehicleGpsMarker
-                    key={v.id}
-                    vehicle={v}
-                    isSelected={selectedId === v.id}
-                    canSimulatePing={canSimulatePing}
-                    simulatingId={simulatingId}
-                    onSelect={(id) => setSelectedId(id)}
-                    onClose={() => setSelectedId(null)}
-                    onPing={handlePing}
-                  />
-                ))}
-              </GoogleMap>
-
-              <div className="absolute bottom-6 right-3 z-10 flex flex-col gap-1.5">
-                <button
-                  type="button"
-                  aria-label="Perbesar peta pelacakan"
-                  onClick={() => {
-                    const next = Math.min(18, Math.round(map?.getZoom() ?? zoom) + 1);
-                    map?.setZoom(next);
-                    setZoom(next);
-                  }}
-                  className="w-10 h-10 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg shadow-sm flex items-center justify-center text-slate-800 dark:text-slate-100"
-                >
-                  <Plus className="w-4 h-4" />
-                </button>
-                <button
-                  type="button"
-                  aria-label="Perkecil peta pelacakan"
-                  onClick={() => {
-                    const next = Math.max(10, Math.round(map?.getZoom() ?? zoom) - 1);
-                    map?.setZoom(next);
-                    setZoom(next);
-                  }}
-                  className="w-10 h-10 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg shadow-sm flex items-center justify-center text-slate-800 dark:text-slate-100"
-                >
-                  <Minus className="w-4 h-4" />
-                </button>
-                <button
-                  type="button"
-                  aria-label="Pusatkan peta pelacakan Batam"
-                  onClick={() => {
-                    map?.panTo(BATAM_CENTER);
-                    map?.setZoom(DEFAULT_ZOOM);
-                    setZoom(DEFAULT_ZOOM);
-                  }}
-                  className="w-10 h-10 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg shadow-sm flex items-center justify-center text-blue-700 dark:text-blue-400"
-                >
-                  <RotateCcw className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
+            <FleetGoogleMapCanvas
+              filteredVehicles={filteredVehicles}
+              theme={theme}
+              selectedId={selectedId}
+              canSimulatePing={canSimulatePing}
+              simulatingId={simulatingId}
+              focusTarget={focusTarget}
+              onSelect={(id) => setSelectedId(id)}
+              onClose={() => setSelectedId(null)}
+              onPing={handlePing}
+              onZoomChange={setZoom}
+            />
           )}
 
           <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400">

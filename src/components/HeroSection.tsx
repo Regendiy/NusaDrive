@@ -5,6 +5,7 @@ import {
   BATAM_PICKUP_LOCATIONS,
   getTodayIsoDate,
 } from '../utils/clientPricing';
+import { HERO_FLEET_IMAGE } from '../utils/assetImages';
 
 interface HeroSectionProps {
   selectedPickupLocation?: string;
@@ -109,7 +110,7 @@ export function HeroSection({
             <div className="h-full min-h-[280px] lg:min-h-[410px] rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-950 relative">
               {!imgError ? (
                 <img
-                  src="/src/assets/images/hero_rental_fleet_1794672684541.jpg"
+                  src={HERO_FLEET_IMAGE}
                   alt="Armada mobil eksekutif NusaDrive di Kota Batam"
                   referrerPolicy="no-referrer"
                   onError={() => setImgError(true)}

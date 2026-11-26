@@ -10,6 +10,7 @@ import {
   toggleTransmissionSelection,
 } from '../utils/fleetFilters';
 import { PromotionalBanner } from './PromotionalBanner';
+import { resolveVehicleImageUrl } from '../utils/assetImages';
 
 interface FleetCatalogProps {
   vehicles: Vehicle[];
@@ -433,7 +434,10 @@ export function FleetCatalog({
                   className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden flex flex-col justify-between transition-colors hover:border-slate-300 dark:hover:border-slate-700"
                 >
                   <div>
-                    <VehicleImage src={vehicle.imageUrl} alt={vehicle.name} />
+                    <VehicleImage
+                      src={resolveVehicleImageUrl(vehicle.imageUrl, vehicle.category)}
+                      alt={vehicle.name}
+                    />
                     <div className="p-5">
                       {/* Lead directly with primary title + status */}
                       <div className="flex items-start justify-between gap-3">

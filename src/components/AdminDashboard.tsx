@@ -21,6 +21,7 @@ import type {
   WhatsappNotificationLog,
 } from '../types';
 import { formatRupiah } from '../utils/clientPricing';
+import { VEHICLE_CATEGORY_IMAGES } from '../utils/assetImages';
 import type { ThemeMode } from '../utils/theme';
 import { FleetTrackingMap } from './FleetTrackingMap';
 import { KycDocumentsModal } from './KycDocumentsModal';
@@ -65,12 +66,7 @@ interface AdminDashboardProps {
 
 type AdminTab = 'fleet' | 'bookings' | 'tracking' | 'whatsapp';
 
-const IMAGE_PRESETS: Record<string, string> = {
-  MPV: '/src/assets/images/car_mpv_zenix_1794672684036.jpg',
-  SUV: '/src/assets/images/car_suv_fortuner_1794672684762.jpg',
-  EV: '/src/assets/images/car_ev_ioniq_1794672685380.jpg',
-  Sedan: '/src/assets/images/car_sedan_camry_1794672685228.jpg',
-};
+const IMAGE_PRESETS: Record<string, string> = VEHICLE_CATEGORY_IMAGES;
 
 export function AdminDashboard({
   user,

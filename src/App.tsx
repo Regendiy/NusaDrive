@@ -29,6 +29,8 @@ import {
   ThemeMode,
   toggleThemeMode,
 } from './utils/theme';
+import { resolveVehicleImageUrl } from './utils/assetImages';
+import { STATIC_BATAM_VEHICLES } from './utils/staticFleet';
 
 export default function App() {
   const [theme, setTheme] = useState<ThemeMode>(() => {
@@ -111,15 +113,29 @@ export default function App() {
   const fetchVehicles = useCallback(async () => {
     setVehiclesLoading(true);
     setVehiclesError(null);
+    if (typeof window !== 'undefined' && window.location.hostname.endsWith('.github.io')) {
+      setVehicles(STATIC_BATAM_VEHICLES);
+      setVehiclesLoading(false);
+      return;
+    }
     try {
       const res = await fetch('/api/vehicles');
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Gagal memuat armada.');
+      const contentType = res.headers.get('content-type') || '';
+      if (!res.ok || !contentType.includes('application/json')) {
+        setVehicles(STATIC_BATAM_VEHICLES);
+        return;
       }
-      setVehicles(data.vehicles || []);
-    } catch (err: any) {
-      setVehiclesError(err.message || 'Gagal memuat armada kendaraan.');
+      const data = await res.json();
+      const loaded = Array.isArray(data.vehicles) ? data.vehicles : [];
+      setVehicles(
+        loaded.map((v: Vehicle) => ({
+          ...v,
+          imageUrl: resolveVehicleImageUrl(v.imageUrl, v.category),
+        }))
+      );
+    } catch {
+      // Fallback seamlessly to bundled static Batam fleet on static hosting (e.g. GitHub Pages)
+      setVehicles(STATIC_BATAM_VEHICLES);
     } finally {
       setVehiclesLoading(false);
     }
@@ -189,67 +205,83 @@ export default function App() {
   }, [fetchVehicles]);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (fbUser) => {
-      setFirebaseUser(fbUser);
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-        eventSourceRef.current = null;
-      }
+    let unsub: (() => void) | undefined;
+    try {
+      unsub = onAuthStateChanged(auth, async (fbUser) => {
+        setFirebaseUser(fbUser);
+        if (eventSourceRef.current) {
+          eventSourceRef.current.close();
+          eventSourceRef.current = null;
+        }
 
-      if (!fbUser) {
-        setUserProfile(null);
-        setBookings([]);
-        setNotifications([]);
-        return;
-      }
+        if (!fbUser) {
+          setUserProfile(null);
+          setBookings([]);
+          setNotifications([]);
+          return;
+        }
 
-      await fetchAuthenticatedData();
+        await fetchAuthenticatedData();
 
-      // Open real-time SSE stream for WhatsApp notifications & booking updates
-      try {
-        const token = await fbUser.getIdToken();
-        const es = new EventSource(`/api/events?token=${encodeURIComponent(token)}`);
-        eventSourceRef.current = es;
+        // Open real-time SSE stream for WhatsApp notifications & booking updates
+        try {
+          const token = await fbUser.getIdToken();
+          const es = new EventSource(`/api/events?token=${encodeURIComponent(token)}`);
+          eventSourceRef.current = es;
 
-        es.addEventListener('whatsapp_notification', (event) => {
-          try {
-            const log: WhatsappNotificationLog = JSON.parse((event as MessageEvent).data);
-            setNotifications((prev) => {
-              if (prev.some((p) => p.id === log.id)) return prev;
-              return [log, ...prev];
-            });
-            showToast(`Notifikasi WhatsApp terkirim ke +${log.recipientPhone} (${log.bookingCode})`);
-          } catch {
-            // Ignore malformed event
-          }
-        });
+          es.addEventListener('whatsapp_notification', (event) => {
+            try {
+              const log: WhatsappNotificationLog = JSON.parse((event as MessageEvent).data);
+              setNotifications((prev) => {
+                if (prev.some((p) => p.id === log.id)) return prev;
+                return [log, ...prev];
+              });
+              showToast(`Notifikasi WhatsApp terkirim ke +${log.recipientPhone} (${log.bookingCode})`);
+            } catch {
+              // Ignore malformed event
+            }
+          });
 
-        es.addEventListener('booking_updated', () => {
-          fetchAuthenticatedData();
-          fetchVehicles();
-        });
-
-        es.addEventListener('vehicle_updated', () => {
-          fetchVehicles();
-        });
-
-        es.addEventListener('vehicle_tracked', (event) => {
-          try {
-            const tracked: Vehicle = JSON.parse((event as MessageEvent).data);
-            setVehicles((prev) =>
-              prev.map((v) => (v.id === tracked.id ? { ...v, ...tracked } : v))
-            );
-          } catch {
+          es.addEventListener('booking_updated', () => {
+            fetchAuthenticatedData();
             fetchVehicles();
-          }
-        });
-      } catch {
-        // SSE optional degradation
-      }
-    });
+          });
+
+          es.addEventListener('vehicle_updated', () => {
+            fetchVehicles();
+          });
+
+          es.addEventListener('vehicle_tracked', (event) => {
+            try {
+              const tracked: Vehicle = JSON.parse((event as MessageEvent).data);
+              setVehicles((prev) =>
+                prev.map((v) =>
+                  v.id === tracked.id
+                    ? {
+                        ...v,
+                        ...tracked,
+                        imageUrl: resolveVehicleImageUrl(
+                          tracked.imageUrl || v.imageUrl,
+                          tracked.category || v.category
+                        ),
+                      }
+                    : v
+                )
+              );
+            } catch {
+              fetchVehicles();
+            }
+          });
+        } catch {
+          // SSE optional degradation
+        }
+      });
+    } catch {
+      // Allow static preview mode when Firebase Auth cannot initialize
+    }
 
     return () => {
-      unsub();
+      if (unsub) unsub();
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
       }
