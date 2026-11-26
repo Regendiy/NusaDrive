@@ -1,0 +1,6 @@
+{
+  "name": "NusaDrive — Rental Mobil & Manajemen Pemesanan",
+  "description": "Platform rental mobil dengan manajemen pemesanan responsif, dashboard admin & pelanggan, integrasi pembayaran otomatis, notifikasi WhatsApp real-time, serta paket kode PHP & MySQL.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
